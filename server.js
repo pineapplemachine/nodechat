@@ -49,8 +49,7 @@ function error_response(response, status, message){
 }
 
 // Utility function to create and return a session for the given user
-// Returns the session ID
-function create_session(username, ip_address){
+function create_session(username, ip_address, callback){
     var session_id = uuid.v1();
     sqlconnection.query(
         // Assume it's better to overwrite another session than to fail
@@ -62,9 +61,9 @@ function create_session(username, ip_address){
         ')',
         function(error, results, fields){
             if(error) throw error;
+            else callback(session_id);
         }
     );
-    return session_id;
 }
 
 // Utility function to get a password hash
@@ -126,9 +125,12 @@ webapp.post('/register', bodyparser.json(), function(request, response){
                     if(error){
                         error_response(response, 400, "Username already taken.");
                     }else{
-                        response.json({
-                            session_id: create_session(request.body.username, request.ip),
-                            success: true
+                        create_session(request.body.username, request.ip, function(session_id){
+                            console.log('Registered user ' + request.body.username + '.');
+                            response.json({
+                                session_id: session_id,
+                                success: true
+                            });
                         });
                     }
                 }
@@ -150,9 +152,12 @@ webapp.post('/login', bodyparser.json(), function(request, response){
                 if(error || !result){ // TODO: status code
                     error_response(response, 400, "Incorrect username or password.");
                 }else{
-                    response.json({
-                        session_id: create_session(request.body.username, request.ip),
-                        success: true
+                    create_session(request.body.username, request.ip, function(session_id){
+                        console.log('User ' + request.body.username + ' logged in.');
+                        response.json({
+                            session_id: session_id,
+                            success: true
+                        });
                     });
                 }
             }
@@ -282,10 +287,6 @@ function retrieve_pagination_params(request, max_limit){
 //   author_username: The name of the user who posted the message
 //   content: The text content of the posted message
 webapp.post('/channel', bodyparser.json(), function(request, response){
-    console.log('select timestamp, author_username, content from messages where ' +
-            'channel_name = ' + sqlconnection.escape(request.body.channel) + ' and ' +
-            'target = "channel" order by timestamp desc ' +
-            retrieve_pagination_params(request).query());
     sqlconnection.query(
         'select timestamp, author_username, content from messages where ' +
             'channel_name = ' + sqlconnection.escape(request.body.channel) + ' and ' +
