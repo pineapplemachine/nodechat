@@ -194,6 +194,7 @@ webapp.post('/logout', bodyparser.json(), function(request, response){
 });
 
 // Utility function used to enforce message rate limits
+// TODO: This doesn't seem to work as expected
 function post_rate_limited_message(session, response, post_callback){
     sqlconnection.query(
         'select timestamp from messages where ' +
