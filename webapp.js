@@ -247,7 +247,8 @@ function broadcast_message(session, message_content, target_data, timestamp){
             old_clients.push(i);
         }
     }
-    for(var j = old_clients.length - 1; i >= 0; i--){
+    for(var j = old_clients.length - 1; j >= 0; j--){
+        console.log('Removing unresponsive client ' + wsclents[old_clients[j]].username + '.');
         wsclients.splice(old_clients[j], 1);
     }
 }
