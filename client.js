@@ -20,7 +20,6 @@ $(document).ready(function(){
                 console.log('Sending heartbeat to server.');
                 connection.send(JSON.stringify({
                     type: 'heartbeat',
-                    username: username,
                     session_id: session_id
                 }));
             }catch(e){
@@ -94,7 +93,6 @@ $(document).ready(function(){
             if(connection){
                 connection.send(JSON.stringify({
                     type: 'subscribe',
-                    username: username,
                     session_id: session_id,
                     subscriptions: subscriptions
                 }));
@@ -109,7 +107,6 @@ $(document).ready(function(){
             if(connection){
                 connection.send(JSON.stringify({
                     type: 'subscribe',
-                    username: username,
                     session_id: session_id,
                     subscriptions: subscriptions
                 }));
@@ -126,7 +123,6 @@ $(document).ready(function(){
             connection.send(JSON.stringify({
                 'type': 'connect',
                 'session_id': session_id,
-                'username': username,
                 'subscriptions': subscriptions
             }));
         }

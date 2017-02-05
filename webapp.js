@@ -217,12 +217,10 @@ function post_rate_limited_message(session, response, post_callback){
 // Additionally removes clients from the list that have not
 // communicated with the server in the last several minutes.
 function broadcast_message(session, message_content, target_data, timestamp){
-    console.log('Broadcasting message to ' + wsclients.length + ' clients.');
     var old_clients = [];
     var current_time = moment().utc();
     for(var i = 0; i < wsclients.length; i++){
         var wsclient = wsclients[i];
-        console.log('Broadcasting message to: ' + wsclient.username);
         if(current_time.diff(wsclient.last_acknowledged, 'minutes') < 4){
             if(target_data.type == 'channel'){
                 if(wsclient.subscriptions.indexOf(target_data.name) >= 0){
@@ -248,7 +246,8 @@ function broadcast_message(session, message_content, target_data, timestamp){
         }
     }
     for(var j = old_clients.length - 1; j >= 0; j--){
-        console.log('Removing unresponsive client ' + wsclents[old_clients[j]].username + '.');
+        console.log('Dropping unresponsive client ' + wsclents[old_clients[j]].username + '.');
+        wsclents[old_clients[j]].close();
         wsclients.splice(old_clients[j], 1);
     }
 }
@@ -396,7 +395,7 @@ webapp.post('/private', bodyparser.json(), function(request, response){
 var websocket_client_id = 0;
 webapp.ws('/live', function(websocket, request){
     var this_client_id = websocket_client_id++;
-    var client_username = null;
+    
     websocket.on('message', function(message){
         try{
             // console.log('Received message: ' + message);
@@ -404,15 +403,14 @@ webapp.ws('/live', function(websocket, request){
         }catch(e){
             return; // Invalid json
         }
-        // Message must indicate originating session and username
-        if(!json.session_id || !json.username) return;
+        // Message must indicate originating session
+        if(!json.session_id) return;
         // Check if client is already known by the server
         var wsclient = null;
-        console.log('Known clients: ' + wsclients.length);
         for(var i = 0; i < wsclients.length; i++){
-            console.log('Comparing against client ' + wsclients[i].username);
             if(json.session_id == wsclients[i].session_id){
                 wsclient = wsclients[i];
+                if(request.ip != wsclient.ip_address) return;
                 break;
             }
         }
@@ -425,22 +423,20 @@ webapp.ws('/live', function(websocket, request){
                         console.log('Session not valid.');
                     },
                     success: function(session){
-                        if(session.username == json.username){
-                            client_username = json.username
-                            console.log('Accepted new socket client with username ' + json.username);
-                            wsclients.push({
-                                identifier: this_client_id,
-                                connection: websocket,
-                                session_id: json.session_id,
-                                username: json.username,
-                                subscriptions: json.subscriptions || [],
-                                last_acknowledged: moment().utc()
-                            });
-                            websocket.send(JSON.stringify({
-                                type: 'connection_successful'
-                            }));
-                            console.log('Total clients: ' + wsclients.length);
-                        }
+                        console.log('Accepted new socket client with username ' + json.username);
+                        wsclients.push({
+                            identifier: this_client_id,
+                            connection: websocket,
+                            ip_address: request.ip,
+                            session_id: session.session_id,
+                            username: session.username,
+                            subscriptions: json.subscriptions || [],
+                            last_acknowledged: moment().utc()
+                        });
+                        websocket.send(JSON.stringify({
+                            type: 'connection_successful'
+                        }));
+                        console.log('Total clients: ' + wsclients.length);
                     }
                 });
             }
@@ -475,6 +471,7 @@ webapp.ws('/live', function(websocket, request){
             wsclient.last_acknowledged = moment().utc();
         }
     });
+    
     websocket.on('close', function(connection){
         console.log('User disconnected.');
         for(var i = 0; i < wsclients.length; i++){
