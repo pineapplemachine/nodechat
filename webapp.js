@@ -14,6 +14,12 @@ var expressws = require('express-ws')(webapp);
 webapp.use(bodyparser.urlencoded({extended: false}));
 webapp.use(bodyparser.json());
 webapp.enable('trust proxy'); // http://stackoverflow.com/a/14631683/3478907
+webapp.use(function(request, result, next){ // http://stackoverflow.com/a/18311469/4099022
+    result.setHeader('Access-Control-Allow-Origin', null);
+    result.setHeader('Access-Control-Allow-Methods', 'GET, POST');
+    result.setHeader('Access-Control-Allow-Headers', 'X-Access-Token,content-type');
+    next();
+});
 
 // Maintain list of websocket clients
 var wsclients = [];
@@ -211,10 +217,12 @@ function post_rate_limited_message(session, response, post_callback){
 // Additionally removes clients from the list that have not
 // communicated with the server in the last several minutes.
 function broadcast_message(session, message_content, target_data, timestamp){
+    console.log('Broadcasting message to ' + wsclients.length + ' clients.');
     var old_clients = [];
     var current_time = moment().utc();
     for(var i = 0; i < wsclients.length; i++){
         var wsclient = wsclients[i];
+        console.log('Broadcasting message to: ' + wsclient.username);
         if(current_time.diff(wsclient.last_acknowledged, 'minutes') < 4){
             if(target_data.type == 'channel'){
                 if(wsclient.subscriptions.indexOf(target_data.name) >= 0){
@@ -222,7 +230,7 @@ function broadcast_message(session, message_content, target_data, timestamp){
                         type: 'channel_message',
                         channel_name: target_data.name,
                         author_username: session.username,
-                        content: message_content,
+                        message_content: message_content,
                         timestamp: timestamp
                     }));
                 }
@@ -231,7 +239,7 @@ function broadcast_message(session, message_content, target_data, timestamp){
                     type: 'private_message',
                     author_username: session.username,
                     recipient_username: target_data.name,
-                    content: message_content,
+                    message_content: message_content,
                     timestamp: timestamp
                 }));
             }
@@ -239,8 +247,8 @@ function broadcast_message(session, message_content, target_data, timestamp){
             old_clients.push(i);
         }
     }
-    for(var j = wsclients.length - 1; i >= 0; i--){
-        wsclients.splice(j, 1);
+    for(var j = old_clients.length - 1; i >= 0; i--){
+        wsclients.splice(old_clients[j], 1);
     }
 }
 
@@ -261,7 +269,7 @@ function post_message(session, response, message_content, target_data){
                 if(error){ // TODO: status code (note case of dup entry because of high rate)
                     error_response(response, 400, "Failed to post message.");
                 }else{
-                    response.json({success: true});
+                    if(response) response.json({success: true});
                     broadcast_message(session, message_content, target_data, timestamp);
                 }
             }
@@ -387,9 +395,10 @@ webapp.post('/private', bodyparser.json(), function(request, response){
 var websocket_client_id = 0;
 webapp.ws('/live', function(websocket, request){
     var this_client_id = websocket_client_id++;
+    var client_username = null;
     websocket.on('message', function(message){
-        console.log('Received a message: ', message);
         try{
+            // console.log('Received message: ' + message);
             var json = JSON.parse(message);
         }catch(e){
             return; // Invalid json
@@ -416,6 +425,7 @@ webapp.ws('/live', function(websocket, request){
                     },
                     success: function(session){
                         if(session.username == json.username){
+                            client_username = json.username
                             console.log('Accepted new socket client with username ' + json.username);
                             wsclients.push({
                                 identifier: this_client_id,
@@ -436,20 +446,23 @@ webapp.ws('/live', function(websocket, request){
         }
         // Request to change channel subscriptions
         else if(json.type == 'subscribe'){
+            console.log('Handling subscription request from ' + wsclient.username + '.');
             wsclient.subscriptions == json.subscriptions || [];
             wsclient.last_acknowledged = moment().utc();
         }
         // Request to post a message
         else if(json.type == 'post_message'){
             if(json.to_channel){
+                console.log('Message posted by ' + wsclient.username + ' to channel ' + json.to_channel + '.');
                 wsclient.last_acknowledged = moment().utc();
-                post_message(session, response, json.content, {
+                post_message(wsclient, null, json.content, {
                     name: json.to_channel,
                     type: 'channel'
                 });
             }else if(json.to_username){
+                console.log('Message posted by ' + wsclient.username + ' to user ' + json.to_username + '.');
                 wsclient.last_acknowledged = moment().utc();
-                post_message(session, response, json.content, {
+                post_message(wsclient, null, json.content, {
                     name: json.to_username,
                     type: 'private'
                 });
@@ -457,11 +470,12 @@ webapp.ws('/live', function(websocket, request){
         }
         // Request to keep connection alive
         else if(json.type == 'heartbeat'){
+            console.log('Acknowledging heartbeat for user ' + wsclient.username + '.');
             wsclient.last_acknowledged = moment().utc();
         }
     });
     websocket.on('close', function(connection){
-        console.log('Client ID ' + this_client_id + ' disconnected.');
+        console.log('User disconnected.');
         for(var i = 0; i < wsclients.length; i++){
             if(wsclients[i].identifier == this_client_id){
                 wsclients.splice(i, 1);

@@ -40,7 +40,7 @@ function sql_format(query_string, parameters){
             result += char;
         }
     }
-    console.log('Formatted mysql query: ' + result);
+    // console.log('Formatted mysql query: ' + result);
     return result;
 }
 
