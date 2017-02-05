@@ -10,15 +10,24 @@ var sql = require('./mysql');
 
 // Initialize webapp for handling API endpoints
 var webapp = express();
+var expressws = require('express-ws')(webapp);
 webapp.use(bodyparser.urlencoded({extended: false}));
 webapp.use(bodyparser.json());
 webapp.enable('trust proxy'); // http://stackoverflow.com/a/14631683/3478907
 
+// Maintain list of websocket clients
+var wsclients = [];
+
+// Format of timestamps sent to websocket clients
+var wsdateformat = 'YYYY-MM-DDTHH:mm:ssZ';
+
 // Utility function to construct an error response
 function error_response(response, status, message){
-    response.status(status);
-    response.json({message: message, status: status, success: false});
-    response.end();
+    if(response){
+        response.status(status);
+        response.json({message: message, status: status, success: false});
+        response.end();
+    }
 }
 
 // Utility function to create and return a session for the given user
@@ -198,25 +207,62 @@ function post_rate_limited_message(session, response, post_callback){
     );
 }
 
+// Broadcast a posted message to websocket clients
+// Additionally removes clients from the list that have not
+// communicated with the server in the last several minutes.
+function broadcast_message(session, message_content, target_data, timestamp){
+    var old_clients = [];
+    var current_time = moment().utc();
+    for(var i = 0; i < wsclients.length; i++){
+        var wsclient = wsclients[i];
+        if(current_time.diff(wsclient.last_acknowledged, 'minutes') < 4){
+            if(target_data.type == 'channel'){
+                if(wsclient.subscriptions.indexOf(target_data.name) >= 0){
+                    wsclient.connection.send(JSON.stringify({
+                        type: 'channel_message',
+                        channel_name: target_data.name,
+                        author_username: session.username,
+                        content: message_content,
+                        timestamp: timestamp
+                    }));
+                }
+            }else if(wsclient.username == target_data.name || wsclient.username == session.username){
+                wsclient.connection.send(JSON.stringify({
+                    type: 'private_message',
+                    author_username: session.username,
+                    recipient_username: target_data.name,
+                    content: message_content,
+                    timestamp: timestamp
+                }));
+            }
+        }else{
+            old_clients.push(i);
+        }
+    }
+    for(var j = wsclients.length - 1; i >= 0; i--){
+        wsclients.splice(j, 1);
+    }
+}
+
 // Post a message to a channel or a user
 function post_message(session, response, message_content, target_data){
     post_rate_limited_message(session, response, function(){
         var target_col = target_data.type == 'channel' ? 'channel_name' : 'private_username';
+        var timestamp = moment().utc().format(wsdateformat);
         sql.query(
             sql.format(
                 'insert into messages(author_username, session_id, ' + target_col + ', ' +
-                'target, content) values(?, ?, ?, ?, ?)', [
+                'target, content, timestamp) values(?, ?, ?, ?, ?, ?)', [
                     session.username, session.session_id, target_data.name,
-                    target_data.type, message_content
+                    target_data.type, message_content, timestamp
                 ]
             ),
             function(error, results, fields){
                 if(error){ // TODO: status code (note case of dup entry because of high rate)
                     error_response(response, 400, "Failed to post message.");
                 }else{
-                    response.json({
-                        success: true
-                    });
+                    response.json({success: true});
+                    broadcast_message(session, message_content, target_data, timestamp);
                 }
             }
         );
@@ -334,6 +380,94 @@ webapp.post('/private', bodyparser.json(), function(request, response){
                 }
             }
         );
+    });
+});
+
+// Websocket endpoint
+var websocket_client_id = 0;
+webapp.ws('/live', function(websocket, request){
+    var this_client_id = websocket_client_id++;
+    websocket.on('message', function(message){
+        console.log('Received a message: ', message);
+        try{
+            var json = JSON.parse(message);
+        }catch(e){
+            return; // Invalid json
+        }
+        // Message must indicate originating session and username
+        if(!json.session_id || !json.username) return;
+        // Check if client is already known by the server
+        var wsclient = null;
+        console.log('Known clients: ' + wsclients.length);
+        for(var i = 0; i < wsclients.length; i++){
+            console.log('Comparing against client ' + wsclients[i].username);
+            if(json.session_id == wsclients[i].session_id){
+                wsclient = wsclients[i];
+                break;
+            }
+        }
+        // Client not yet known? Verify user and add to list
+        if(!wsclient){
+            console.log('Unknown client.');
+            if(json.type == 'connect'){
+                get_valid_session(json.session_id, request.ip, {
+                    failure: function(){
+                        console.log('Session not valid.');
+                    },
+                    success: function(session){
+                        if(session.username == json.username){
+                            console.log('Accepted new socket client with username ' + json.username);
+                            wsclients.push({
+                                identifier: this_client_id,
+                                connection: websocket,
+                                session_id: json.session_id,
+                                username: json.username,
+                                subscriptions: json.subscriptions || [],
+                                last_acknowledged: moment().utc()
+                            });
+                            websocket.send(JSON.stringify({
+                                type: 'connection_successful'
+                            }));
+                            console.log('Total clients: ' + wsclients.length);
+                        }
+                    }
+                });
+            }
+        }
+        // Request to change channel subscriptions
+        else if(json.type == 'subscribe'){
+            wsclient.subscriptions == json.subscriptions || [];
+            wsclient.last_acknowledged = moment().utc();
+        }
+        // Request to post a message
+        else if(json.type == 'post_message'){
+            if(json.to_channel){
+                wsclient.last_acknowledged = moment().utc();
+                post_message(session, response, json.content, {
+                    name: json.to_channel,
+                    type: 'channel'
+                });
+            }else if(json.to_username){
+                wsclient.last_acknowledged = moment().utc();
+                post_message(session, response, json.content, {
+                    name: json.to_username,
+                    type: 'private'
+                });
+            }
+        }
+        // Request to keep connection alive
+        else if(json.type == 'heartbeat'){
+            wsclient.last_acknowledged = moment().utc();
+        }
+    });
+    websocket.on('close', function(connection){
+        console.log('Client ID ' + this_client_id + ' disconnected.');
+        for(var i = 0; i < wsclients.length; i++){
+            if(wsclients[i].identifier == this_client_id){
+                wsclients.splice(i, 1);
+                break;
+            }
+        }
     });
 });
 
