@@ -228,7 +228,7 @@ function broadcast_message(session, message_content, target_data, timestamp){
                         type: 'channel_message',
                         channel_name: target_data.name,
                         author_username: session.username,
-                        message_content: message_content,
+                        content: message_content,
                         timestamp: timestamp
                     }));
                 }
@@ -237,7 +237,7 @@ function broadcast_message(session, message_content, target_data, timestamp){
                     type: 'private_message',
                     author_username: session.username,
                     recipient_username: target_data.name,
-                    message_content: message_content,
+                    content: message_content,
                     timestamp: timestamp
                 }));
             }
@@ -423,7 +423,7 @@ webapp.ws('/live', function(websocket, request){
                         console.log('Session not valid.');
                     },
                     success: function(session){
-                        console.log('Accepted new socket client with username ' + json.username);
+                        console.log('Accepted new socket client with username ' + session.username);
                         wsclients.push({
                             identifier: this_client_id,
                             connection: websocket,

@@ -71,7 +71,7 @@ $(document).ready(function(){
     }
     
     // Log out of active session
-    window.logout = function(as_username, password){
+    window.logout = function(){
         $.ajax({
             type: 'POST',
             url: 'http://' + host + '/logout',
@@ -138,19 +138,16 @@ $(document).ready(function(){
                 console.log('Successfully connected to websocket server.');
             }else if(json.type == 'channel_message'){
                 console.log(
-                    '#' + json.channel_name + ' ' + json.author_username + ': ' +
-                    json.message_content
+                    '#' + json.channel_name + ' ' + json.author_username + ': ' + json.content
                 );
             }else if(json.type == 'private_message'){
                 if(json.author_username == username){
                     console.log(
-                        'Sent PM to ' + json.recipient_username + ': ' +
-                        json.message_content
+                        'Sent PM to ' + json.recipient_username + ': ' + json.content
                     );
                 }else{
                     console.log(
-                        'Received PM from ' + json.author_username + ': ' +
-                        json.message_content
+                        'Received PM from ' + json.author_username + ': ' + json.content
                     );
                 }
             }
