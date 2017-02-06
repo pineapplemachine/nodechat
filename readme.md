@@ -46,9 +46,9 @@ client.js:122 Connecting to websocket server.
 client.js:138 Successfully connected to websocket server.
 > postchannel('home', 'hello!');
 client.js:140 #home testuser: hello!
-disconnect();
+> disconnect();
 client.js:161 Disconnected from websocket server.
-logout();
+> logout();
 ```
 
 ## API
