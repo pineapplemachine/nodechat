@@ -209,16 +209,18 @@ webapp.post('/logout', bodyparser.json(), function(request, response){
 });
 
 // Utility function used to enforce message rate limits
-// TODO: This doesn't seem to work as expected
+// Restrict a session to 4 messages per 10 seconds
 function post_rate_limited_message(session, response, post_callback){
     sql.query(
         sql.format(
-            'select timestamp from messages where author_username = ? ' +
-            'order by timestamp desc limit 1 offset 4',
-            [session.username]
+            'select timestamp from messages where author_username = ? and ' +
+            'timestamp >= ? order by timestamp desc limit 4', [
+                session.username,
+                moment.utc().subtract(10, 'seconds').format(sqldateformat)
+            ]
         ),
         function(error, results, fields){
-            if(error || (results.length > 0 && moment().utc().diff(results[0], 'seconds') < 10)){
+            if(error || results.length >= 4){
                 error_response(response, 400, "Message rate limit exceeded.");
             }else{
                 post_callback();
