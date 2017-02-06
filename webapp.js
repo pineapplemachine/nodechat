@@ -26,6 +26,8 @@ var wsclients = [];
 
 // Format of timestamps sent to websocket clients
 var wsdateformat = 'YYYY-MM-DDTHH:mm:ssZ';
+// Format of timestamps in MySQL queries
+var sqldateformat = 'YYYY-MM-DD HH:mm:ss';
 
 // Utility function to construct an error response
 function error_response(response, status, message){
@@ -39,11 +41,12 @@ function error_response(response, status, message){
 // Utility function to create and return a session for the given user
 function create_session(username, ip_address, callback){
     var session_id = uuid.v1();
+    var timestamp = moment().utc().format(sqldateformat);
     sql.query(
         sql.format(
-            'replace into sessions (username, ip_address, session_id) ' +
-            'values(?, ?, ?)', [
-                username, ip_address, session_id
+            'replace into sessions (username, ip_address, session_id, timestamp, last_active) ' +
+            'values(?, ?, ?, ?, ?)', [
+                username, ip_address, session_id, timestamp, timestamp
             ]
         ),
         function(error, results, fields){
@@ -69,18 +72,29 @@ function get_request_session(request){
 // Utility function to get a valid session
 // Returns a session object when this session is valid for this IP address,
 // returns null otherwise.
-// TODO: session expiration by time (not just logout)
+// Updates the session object's `last_active` attribute upon retrieval.
 function get_valid_session(session_id, ip_address, callbacks){
     sql.query(
         sql.format(
             'select * from sessions where session_id = ? and ' +
-            'ip_address = ? and expired = 0', [
-                session_id, ip_address
+            'ip_address = ? and last_active >= ? and logged_out = 0', [
+                session_id, ip_address,
+                moment().utc().subtract(30, 'minutes').format(sqldateformat)
             ]
         ),
         function(error, results, fields){
-            if(!error && results.length == 1) callbacks.success(results[0]);
-            else callbacks.failure();
+            if(!error && results.length == 1){
+                sql.query(
+                    sql.format(
+                        'update sessions set last_active = ? where session_id = ?', [
+                            moment.utc().format(sqldateformat), session_id
+                        ]
+                    )
+                );
+                callbacks.success(results[0]);
+            }else{
+                callbacks.failure();
+            }
         }
     );
 }
@@ -181,7 +195,7 @@ webapp.post('/logout', bodyparser.json(), function(request, response){
     with_valid_session(request, response, function(session){
         sql.query(
             sql.format(
-                'update sessions set expired = 1 where session_id = ?', [
+                'update sessions set logged_out = 1 where session_id = ?', [
                     session.session_id
                 ]
             ),
@@ -256,7 +270,7 @@ function broadcast_message(session, message_content, target_data, timestamp){
 function post_message(session, response, message_content, target_data){
     post_rate_limited_message(session, response, function(){
         var target_col = target_data.type == 'channel' ? 'channel_name' : 'private_username';
-        var timestamp = moment().utc().format(wsdateformat);
+        var timestamp = moment().utc().format(sqldateformat);
         sql.query(
             sql.format(
                 'insert into messages(author_username, session_id, ' + target_col + ', ' +
