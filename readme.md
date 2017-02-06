@@ -107,6 +107,18 @@ private messages sent to and received from.
 Body may contain `limit` and/or `offset` to control pagination.
 `limit` is clamped at a maximum of 50 messages.
 
+- `/search`
+
+Retrieve messages from channels or private conversations using a 
+case-insensitive search term.
+Either the body must contain a `session_id` or the headers an `X-Access-Token`
+representing a valid session ID acquired at registration or login.
+Body must contain `search_string`, indicating the term to search for.
+Body must contain `channel_names` and/or `private_usernames`, which are
+arrays indicating channels and private conversations to search in.
+Body may contain `limit` and/or `offset` to control pagination.
+`limit` is clamped at a maximum of 50 messages.
+
 ## Websocket server protocol
 
 Every message sent to or from the socket server must be a valid JSON string

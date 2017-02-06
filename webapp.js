@@ -377,7 +377,6 @@ webapp.post('/private', bodyparser.json(), function(request, response){
             ),
             function(error, results, fields){
                 if(error){ // TODO: status code
-                    console.log(error);
                     error_response(response, 400, "Failed to retrieve messages.");
                 }else{
                     response.json({
@@ -388,6 +387,81 @@ webapp.post('/private', bodyparser.json(), function(request, response){
                 }
             }
         );
+    });
+});
+
+// Endpoint to search the text content of messages
+// Body must contain:
+//  session_id: A valid auth session ID
+//  channel_names AND/OR private_usernames: Channels and/or PM conversations to search
+//  search_string: Case-insensitive search term
+// Body may contain:
+//  offset: Offset of messages to retrieve (for pagination)
+//  limit: Limit of messages to retrieve (for pagination) max 50
+// Successful response will contain:
+//  search_string: The case-insensitive search term
+//  username: Name of user messages were retrieved from
+//  messages: An array of messages with the attributes:
+//   timestamp: When the message was posted e.g. "2017-01-01T00:00:00.000Z"
+//   target: Either "channel" or "private"
+//   channel_name: The channel the message was publicly posted to (if any)
+//   private_username: The username the message was privately posted to (if any)
+//   author_username: The name of the user who posted the message
+//   content: The text content of the posted message
+webapp.post('/search', bodyparser.json(), function(request, response){
+    with_valid_session(request, response, function(session){
+        var channel_constraint = '';
+        if(request.body.channel_names){
+            channel_constraint = sql.format(
+                '(target = "channel" and channel_name in (?))', [
+                    request.body.channel_names
+                ]
+            );
+        }
+        var private_constraint = '';
+        if(request.body.private_usernames){
+            private_constraint = sql.format(
+                '(target = "private" and (' +
+                    '(private_username = ? and author_username in (?)) or ' +
+                    '(author_username = ? and private_username in (?))' +
+                '))', [
+                    session.username, request.body.private_usernames,
+                    session.username, request.body.private_usernames
+                ]
+            );
+        }
+        if(request.body.search_string && (channel_constraint || private_constraint)){
+            var constraint = '';
+            if(channel_constraint && private_constraint){
+                constraint = '(' + channel_constraint + ') or (' + private_constraint + ')';
+            }else{
+                constraint = channel_constraint || private_constraint;
+            }
+            sql.query(
+                sql.format(
+                    'select timestamp, channel_name, private_username, target, ' +
+                    'author_username, content from messages where ' +
+                    'content like ? and ' + constraint + ' order by timestamp desc ' +
+                    retrieve_pagination_params(request, 50).query(), [
+                        '%' + request.body.search_string + '%'
+                    ]
+                ),
+                function(error, results, fields){
+                    if(error){ // TODO: status code
+                        console.log(error);
+                        error_response(response, 400, "Failed to retrieve messages.");
+                    }else{
+                        response.json({
+                            search_string: request.body.search_string,
+                            messages: results,
+                            success: true
+                        });
+                    }
+                }
+            );
+        }else{
+            error_response(response, 400, "Incorrect search parameters.");
+        }
     });
 });
 
