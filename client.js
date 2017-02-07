@@ -1,7 +1,7 @@
 $(document).ready(function(){
     "use strict";
 
-    var host = '127.0.0.1:8080';
+    window.host = '127.0.0.1:8080';
     
     window.WebSocket = window.WebSocket || window.MozWebSocket;
     
@@ -32,7 +32,7 @@ $(document).ready(function(){
     window.register = function(as_username, password){
         $.ajax({
             type: 'POST',
-            url: 'http://' + host + '/register',
+            url: 'http://' + window.host + '/register',
             dataType: 'json',
             data: {
                 username: as_username,
@@ -53,7 +53,7 @@ $(document).ready(function(){
     window.login = function(as_username, password){
         $.ajax({
             type: 'POST',
-            url: 'http://' + host + '/login',
+            url: 'http://' + window.host + '/login',
             dataType: 'json',
             data: {
                 username: as_username,
@@ -74,7 +74,7 @@ $(document).ready(function(){
     window.logout = function(){
         $.ajax({
             type: 'POST',
-            url: 'http://' + host + '/logout',
+            url: 'http://' + window.host + '/logout',
             dataType: 'json',
             data: {
                 session_id: session_id,
@@ -116,7 +116,7 @@ $(document).ready(function(){
     
     // Connect to the websocket server
     window.connect = function(){
-        connection = new WebSocket('ws://' + host + '/live');
+        connection = new WebSocket('ws://' + window.host + '/live');
     
         connection.onopen = function(){
             console.log('Connecting to websocket server.');
@@ -174,7 +174,7 @@ $(document).ready(function(){
         }else{
             $.ajax({
                 type: 'POST',
-                url: 'http://' + host + '/message',
+                url: 'http://' + window.host + '/message',
                 dataType: 'json',
                 data: {
                     session_id: session_id,
@@ -204,7 +204,7 @@ $(document).ready(function(){
         }else{
             $.ajax({
                 type: 'POST',
-                url: 'http://' + host + '/message',
+                url: 'http://' + window.host + '/message',
                 dataType: 'json',
                 data: {
                     session_id: session_id,

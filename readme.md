@@ -22,6 +22,9 @@ The client operates within the browser console.
 (Chrome recommended, on the basis that it's the only browser I've actually
 tested with.)
 
+To reassign the host from the default `http://127.0.0.1:8080`,
+`host = 'http://somehost:1234`.
+
 To register a user, `register("username", "password")`.
 
 To log in as a user, `login("username", "password")`.
